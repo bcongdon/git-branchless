@@ -17,7 +17,7 @@ use crate::core::metadata::{
 use crate::git::{Dag, Repo};
 use crate::tui::Effects;
 
-pub use graph::{make_smartlog_graph, SmartlogGraph};
+pub use graph::{make_smartlog_graph, number_nodes, SmartlogGraph};
 pub use render::{render_graph, SmartlogOptions};
 
 mod graph {
@@ -214,9 +214,28 @@ mod graph {
         sort_children(&mut graph);
         Ok(graph)
     }
+
+    /// Assign each graph node an index based on the order in which it appears in the SmartGraph output.
+    pub fn number_nodes(
+        graph: &SmartlogGraph,
+        root_oids: &[NonZeroOid],
+    ) -> HashMap<NonZeroOid, usize> {
+        let mut out = HashMap::new();
+        let mut idx = 1;
+        for root in root_oids {
+            let mut queue = Vec::new();
+            queue.push(root);
+            while let Some(curr) = queue.pop() {
+                out.insert(*curr, idx);
+                idx += 1;
+                queue.extend(graph[curr].children.iter().rev());
+            }
+        }
+        out
+    }
 }
 
-mod render {
+pub mod render {
     use std::cmp::Ordering;
 
     use cursive::theme::Effect;
@@ -238,7 +257,7 @@ mod render {
     ///
     /// Returns the list such that the topologically-earlier subgraphs are first in
     /// the list (i.e. those that would be rendered at the bottom of the smartlog).
-    fn split_commit_graph_by_roots(
+    pub fn split_commit_graph_by_roots(
         effects: &Effects,
         repo: &Repo,
         dag: &Dag,
@@ -372,7 +391,7 @@ mod render {
                     }
                 } else {
                     StyledStringBuilder::new()
-                        .append_plain(format!("{} ", glyphs.line))
+                        .append_plain(format!("{}", glyphs.line))
                         .append(child_line)
                         .build()
                 };
@@ -450,7 +469,6 @@ mod render {
     }
 
     /// Render the smartlog graph and write it to the provided stream.
-    #[instrument(skip(commit_metadata_providers, graph))]
     pub fn render_graph(
         effects: &Effects,
         repo: &Repo,

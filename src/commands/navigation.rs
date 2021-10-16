@@ -2,13 +2,19 @@
 
 use std::fmt::Write;
 use std::io::stdin;
+use std::time::SystemTime;
 
 use eden_dag::DagAlgorithm;
 use tracing::instrument;
 
-use crate::commands::smartlog::smartlog;
+use crate::commands::smartlog::render;
+use crate::commands::smartlog::{make_smartlog_graph, number_nodes, render_graph, smartlog};
 use crate::core::eventlog::{EventLogDb, EventReplayer};
 use crate::core::formatting::printable_styled_string;
+use crate::core::metadata::{
+    BranchesProvider, CommitMessageProvider, CommitNumberProvider, CommitOidProvider,
+    DifferentialRevisionProvider, ObsolescenceExplanationProvider, RelativeTimeProvider,
+};
 use crate::git::{sort_commit_set, CommitSet, Dag, GitRunInfo, NonZeroOid, Repo};
 use crate::tui::Effects;
 
@@ -105,23 +111,10 @@ fn advance(
                     )?;
                 }
                 if interactive {
-                    write!(
-                        effects.get_output_stream(),
-                        "Select the commit to advance to [1-{}]: ",
-                        children.len()
-                    )?;
-                    let mut in_ = String::new();
-                    stdin().read_line(&mut in_)?;
-                    let selected = in_.trim().parse::<usize>().unwrap_or(0);
-                    if selected < 1 || selected > children.len() {
-                        writeln!(
-                            effects.get_error_stream(),
-                            "Invalid selection. Must be in range [1-{}]",
-                            children.len()
-                        )?;
-                        return Ok(None);
+                    match prompt_for_range(effects, 1, children.len())? {
+                        Some(selected) => children[selected - 1].get_oid(),
+                        None => return Ok(None),
                     }
-                    children[selected - 1].get_oid()
                 } else {
                     writeln!(effects.get_output_stream(), "(Pass --oldest (-o) or --newest (-n) to select between ambiguous next commits)")?;
                     return Ok(None);
@@ -184,4 +177,91 @@ pub fn next(
 
     smartlog(effects, &Default::default())?;
     Ok(0)
+}
+
+/// Pick a specific commit to checkout.
+#[instrument]
+pub fn pick(effects: &Effects, git_run_info: &GitRunInfo) -> eyre::Result<isize> {
+    let repo = Repo::from_current_dir()?;
+    let references_snapshot = repo.get_references_snapshot()?;
+    let conn = repo.get_db_conn()?;
+    let event_log_db = EventLogDb::new(&conn)?;
+    let event_replayer = EventReplayer::from_event_log_db(effects, &repo, &event_log_db)?;
+    let event_cursor = event_replayer.make_default_cursor();
+    let dag = Dag::open_and_sync(
+        effects,
+        &repo,
+        &event_replayer,
+        event_cursor,
+        &references_snapshot,
+    )?;
+
+    let graph = make_smartlog_graph(effects, &repo, &dag, &event_replayer, event_cursor, true)?;
+
+    let root_oids = render::split_commit_graph_by_roots(effects, &repo, &dag, &graph);
+    let numbered_nodes = number_nodes(&graph, &root_oids);
+
+    let lines = render_graph(
+        effects,
+        &repo,
+        &dag,
+        &graph,
+        references_snapshot.head_oid,
+        &mut [
+            &mut CommitOidProvider::new(true)?,
+            &mut RelativeTimeProvider::new(&repo, SystemTime::now())?,
+            &mut ObsolescenceExplanationProvider::new(&event_replayer, event_cursor)?,
+            &mut BranchesProvider::new(&repo, &references_snapshot)?,
+            &mut DifferentialRevisionProvider::new(&repo)?,
+            &mut CommitMessageProvider::new()?,
+            &mut CommitNumberProvider::new(&numbered_nodes)?,
+        ],
+    )?;
+    for line in lines {
+        writeln!(
+            effects.get_output_stream(),
+            "{}",
+            printable_styled_string(effects.get_glyphs(), line)?
+        )?;
+    }
+
+    match prompt_for_range(effects, 1, numbered_nodes.len())? {
+        Some(selected) => {
+            let oid = numbered_nodes
+                .iter()
+                .find(|&(_, num)| *num == selected)
+                .map(|(oid, _)| oid)
+                .expect("fixme");
+
+            let result = git_run_info.run(effects, None, &["checkout", &oid.to_string()])?;
+            if result != 0 {
+                return Ok(result);
+            }
+            Ok(0)
+        }
+        None => Ok(1),
+    }
+}
+
+fn prompt_for_range(effects: &Effects, min: usize, max: usize) -> eyre::Result<Option<usize>> {
+    write!(
+        effects.get_output_stream(),
+        "Select the commit to advance to [{}-{}]: ",
+        min,
+        max
+    )?;
+    let mut in_ = String::new();
+    stdin().read_line(&mut in_)?;
+    let selected = in_.trim().parse::<usize>().unwrap_or(0);
+    if selected < min || selected > max {
+        writeln!(
+            effects.get_error_stream(),
+            "Invalid selection. Must be in range [{}-{}]",
+            min,
+            max
+        )?;
+        Ok(None)
+    } else {
+        Ok(Some(selected))
+    }
 }

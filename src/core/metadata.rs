@@ -4,7 +4,7 @@
 //! These are rendered inline in the smartlog, between the commit hash and the
 //! commit message.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::ffi::OsStr;
 use std::ops::Add;
@@ -20,7 +20,7 @@ use crate::core::config::{
     get_commit_metadata_branches, get_commit_metadata_differential_revision,
     get_commit_metadata_relative_time,
 };
-use crate::git::{CategorizedReferenceName, Commit, Repo, RepoReferencesSnapshot};
+use crate::git::{CategorizedReferenceName, Commit, NonZeroOid, Repo, RepoReferencesSnapshot};
 
 use super::eventlog::{Event, EventCursor, EventReplayer};
 use super::formatting::StyledStringBuilder;
@@ -75,6 +75,29 @@ impl CommitMetadataProvider for CommitOidProvider {
             StyledString::plain(oid)
         };
         Ok(Some(oid))
+    }
+}
+
+/// Display a number associated with a commit.
+#[derive(Debug)]
+pub struct CommitNumberProvider<'a> {
+    node_numbers: &'a HashMap<NonZeroOid, usize>,
+}
+
+impl<'a> CommitNumberProvider<'a> {
+    /// Constructor.
+    pub fn new(node_numbers: &'a HashMap<NonZeroOid, usize>) -> eyre::Result<Self> {
+        Ok(CommitNumberProvider { node_numbers })
+    }
+}
+
+impl<'a> CommitMetadataProvider for CommitNumberProvider<'a> {
+    #[instrument]
+    fn describe_commit(&mut self, commit: &Commit) -> eyre::Result<Option<StyledString>> {
+        Ok(self
+            .node_numbers
+            .get(&commit.get_oid())
+            .map(|number| StyledString::styled(format!("[{}]", number), BaseColor::Magenta.dark())))
     }
 }
 

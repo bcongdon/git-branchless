@@ -155,6 +155,8 @@ fn do_main_and_drop_locals() -> eyre::Result<i32> {
             navigation::next(&effects, &git_run_info, num_commits, towards, interactive)?
         }
 
+        Command::Pick {} => navigation::pick(&effects, &git_run_info)?,
+
         Command::Move {
             source,
             dest,
