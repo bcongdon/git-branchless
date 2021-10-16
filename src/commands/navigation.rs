@@ -1,6 +1,7 @@
 //! Convenience commands to help the user move through a stack of commits.
 
 use std::fmt::Write;
+use std::io::stdin;
 
 use eden_dag::DagAlgorithm;
 use tracing::instrument;
@@ -53,6 +54,7 @@ fn advance(
     current_oid: NonZeroOid,
     num_commits: isize,
     towards: Option<Towards>,
+    interactive: bool,
 ) -> eyre::Result<Option<NonZeroOid>> {
     let glyphs = effects.get_glyphs();
     let mut current_oid = current_oid;
@@ -80,6 +82,11 @@ fn advance(
                 )?;
 
                 for (j, child) in (0..).zip(children.iter()) {
+                    let prefix = if interactive {
+                        format!(" [{}] ", j + 1)
+                    } else {
+                        "".into()
+                    };
                     let descriptor = if j == 0 {
                         " (oldest)"
                     } else if j + 1 == children.len() {
@@ -90,14 +97,35 @@ fn advance(
 
                     writeln!(
                         effects.get_output_stream(),
-                        "  {} {}{}",
+                        "  {} {}{}{}",
                         glyphs.bullet_point,
+                        prefix,
                         printable_styled_string(glyphs, child.friendly_describe()?)?,
                         descriptor
                     )?;
                 }
-                writeln!(effects.get_output_stream(), "(Pass --oldest (-o) or --newest (-n) to select between ambiguous next commits)")?;
-                return Ok(None);
+                if interactive {
+                    write!(
+                        effects.get_output_stream(),
+                        "Select the commit to advance to [1-{}]: ",
+                        children.len()
+                    )?;
+                    let mut in_ = String::new();
+                    stdin().read_line(&mut in_)?;
+                    let selected = in_.trim().parse::<usize>().unwrap_or(0);
+                    if selected < 1 || selected > children.len() {
+                        writeln!(
+                            effects.get_error_stream(),
+                            "Invalid selection. Must be in range [1-{}]",
+                            children.len()
+                        )?;
+                        return Ok(None);
+                    }
+                    children[selected - 1].get_oid()
+                } else {
+                    writeln!(effects.get_output_stream(), "(Pass --oldest (-o) or --newest (-n) to select between ambiguous next commits)")?;
+                    return Ok(None);
+                }
             }
         };
     }
@@ -111,6 +139,7 @@ pub fn next(
     git_run_info: &GitRunInfo,
     num_commits: Option<isize>,
     towards: Option<Towards>,
+    interactive: bool,
 ) -> eyre::Result<isize> {
     let repo = Repo::from_current_dir()?;
     let references_snapshot = repo.get_references_snapshot()?;
@@ -134,7 +163,15 @@ pub fn next(
     };
 
     let num_commits = num_commits.unwrap_or(1);
-    let current_oid = advance(effects, &repo, &dag, head_oid, num_commits, towards)?;
+    let current_oid = advance(
+        effects,
+        &repo,
+        &dag,
+        head_oid,
+        num_commits,
+        towards,
+        interactive,
+    )?;
     let current_oid = match current_oid {
         None => return Ok(1),
         Some(current_oid) => current_oid,

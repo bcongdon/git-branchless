@@ -144,6 +144,7 @@ fn do_main_and_drop_locals() -> eyre::Result<i32> {
             num_commits,
             oldest,
             newest,
+            interactive,
         } => {
             let towards = match (oldest, newest) {
                 (false, false) => None,
@@ -151,7 +152,7 @@ fn do_main_and_drop_locals() -> eyre::Result<i32> {
                 (false, true) => Some(navigation::Towards::Newest),
                 (true, true) => eyre::bail!("Both --oldest and --newest were set"),
             };
-            navigation::next(&effects, &git_run_info, num_commits, towards)?
+            navigation::next(&effects, &git_run_info, num_commits, towards, interactive)?
         }
 
         Command::Move {
