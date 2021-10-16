@@ -101,6 +101,29 @@ impl<'a> CommitMetadataProvider for CommitNumberProvider<'a> {
     }
 }
 
+/// Display a number associated with a commit.
+#[derive(Debug)]
+pub struct CommitLabelProvider<'a> {
+    node_labels: &'a HashMap<NonZeroOid, String>,
+}
+
+impl<'a> CommitLabelProvider<'a> {
+    /// Constructor.
+    pub fn new(node_labels: &'a HashMap<NonZeroOid, String>) -> eyre::Result<Self> {
+        Ok(CommitLabelProvider { node_labels })
+    }
+}
+
+impl<'a> CommitMetadataProvider for CommitLabelProvider<'a> {
+    #[instrument]
+    fn describe_commit(&mut self, commit: &Commit) -> eyre::Result<Option<StyledString>> {
+        Ok(self
+            .node_labels
+            .get(&commit.get_oid())
+            .map(|label| StyledString::styled(format!("[{}]", label), BaseColor::Magenta.dark())))
+    }
+}
+
 /// Display the first line of the commit message.
 #[derive(Debug)]
 pub struct CommitMessageProvider;

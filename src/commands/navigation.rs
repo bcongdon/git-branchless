@@ -1,5 +1,6 @@
 //! Convenience commands to help the user move through a stack of commits.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::io::stdin;
 use std::time::SystemTime;
@@ -12,8 +13,10 @@ use crate::commands::smartlog::{make_smartlog_graph, number_nodes, render_graph,
 use crate::core::eventlog::{EventLogDb, EventReplayer};
 use crate::core::formatting::printable_styled_string;
 use crate::core::metadata::{
-    BranchesProvider, CommitMessageProvider, CommitNumberProvider, CommitOidProvider,
+    BranchesProvider, CommitLabelProvider, CommitMessageProvider, CommitMessageProvider,
+    CommitNumberProvider, CommitNumberProvider, CommitOidProvider, CommitOidProvider,
     DifferentialRevisionProvider, ObsolescenceExplanationProvider, RelativeTimeProvider,
+    RelativeTimeProvider,
 };
 use crate::git::{sort_commit_set, CommitSet, Dag, GitRunInfo, NonZeroOid, Repo};
 use crate::tui::Effects;
@@ -180,7 +183,7 @@ pub fn next(
 }
 
 /// Pick a specific commit to checkout.
-#[instrument]
+// #[instrument]
 pub fn pick(effects: &Effects, git_run_info: &GitRunInfo) -> eyre::Result<isize> {
     let repo = Repo::from_current_dir()?;
     let references_snapshot = repo.get_references_snapshot()?;
@@ -200,6 +203,12 @@ pub fn pick(effects: &Effects, git_run_info: &GitRunInfo) -> eyre::Result<isize>
 
     let root_oids = render::split_commit_graph_by_roots(effects, &repo, &dag, &graph);
     let numbered_nodes = number_nodes(&graph, &root_oids);
+    let hints = generate_hints(numbered_nodes.len());
+    let labeled_nodes = numbered_nodes
+        .iter()
+        .enumerate()
+        .map(|(idx, (k, v))| (*k, hints[idx].clone()))
+        .collect::<HashMap<_, _>>();
 
     let lines = render_graph(
         effects,
@@ -214,7 +223,8 @@ pub fn pick(effects: &Effects, git_run_info: &GitRunInfo) -> eyre::Result<isize>
             &mut BranchesProvider::new(&repo, &references_snapshot)?,
             &mut DifferentialRevisionProvider::new(&repo)?,
             &mut CommitMessageProvider::new()?,
-            &mut CommitNumberProvider::new(&numbered_nodes)?,
+            // &mut CommitNumberProvider::new(&numbered_nodes)?,
+            &mut CommitLabelProvider::new(&labeled_nodes)?,
         ],
     )?;
     for line in lines {
@@ -246,9 +256,9 @@ pub fn pick(effects: &Effects, git_run_info: &GitRunInfo) -> eyre::Result<isize>
 fn prompt_for_range(effects: &Effects, min: usize, max: usize) -> eyre::Result<Option<usize>> {
     write!(
         effects.get_output_stream(),
-        "Select the commit to advance to [{}-{}]: ",
-        min,
-        max
+        "Select the commit to advance to: ",
+        // min,
+        // max
     )?;
     let mut in_ = String::new();
     stdin().read_line(&mut in_)?;
@@ -264,4 +274,35 @@ fn prompt_for_range(effects: &Effects, min: usize, max: usize) -> eyre::Result<O
     } else {
         Ok(Some(selected))
     }
+}
+
+fn generate_hints(num_hints: usize) -> Vec<String> {
+    let hint_chars = "sadfjklewcmpgh";
+    // let hints = [""];
+    // let offset = 0;
+    // while (((hints.length - offset) < linkCount) || (hints.length === 1)) {
+    //   const hint = hints[offset++];
+    //   for (let ch of this.linkHintCharacters)
+    //     hints.push(ch + hint);
+    // }
+    // hints = hints.slice(offset, offset+linkCount);
+
+    // // Shuffle the hints so that they're scattered; hints starting with the same character and short hints are
+    // // spread evenly throughout the array.
+    // return hints.sort().map(str => str.reverse());
+    let mut hints: Vec<String> = vec!["".to_string()];
+    let mut offset = 0;
+    while hints.len() - offset < num_hints || hints.len() == 1 {
+        let hint = &hints[offset].clone();
+        offset += 1;
+        for c in hint_chars.chars() {
+            hints.push(format!("{}{}", c, hint));
+        }
+    }
+    hints = hints[offset..=offset + num_hints].to_vec();
+    hints.sort();
+    hints
+        .iter()
+        .map(|h| h.chars().rev().collect::<_>())
+        .collect::<_>()
 }
