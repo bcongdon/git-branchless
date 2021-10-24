@@ -83,14 +83,14 @@ jobs:
 
       - name: Run Rust tests (all features)
         timeout-minutes: 5
+        shell: 'script -q -e -c "bash {0}"'
         run: |
           export PATH_TO_GIT="$PWD"/git
-          # https://github.com/actions/runner/issues/241#issuecomment-577360161
-          script -e -c cargo test --all-features
+          cargo test --all-features
 
       - name: Run Rust tests (no default features)
         timeout-minutes: 5
+        shell: 'script -q -e -c "bash {0}"'
         run: |
           export PATH_TO_GIT="$PWD"/git
-          # https://github.com/actions/runner/issues/241#issuecomment-577360161
-          script -e -c cargo test --no-default-features
+          cargo test --no-default-features
