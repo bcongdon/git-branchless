@@ -223,7 +223,7 @@ fn test_checkout() -> eyre::Result<()> {
     run_in_pty(
         &git,
         &["branchless", "checkout"],
-        &["test1", CARRIAGE_RETURN],
+        &["test1", CARRIAGE_RETURN, CARRIAGE_RETURN],
     )?;
     {
         let (stdout, _stderr) = git.run(&["smartlog"])?;
@@ -241,7 +241,7 @@ fn test_checkout() -> eyre::Result<()> {
     run_in_pty(
         &git,
         &["branchless", "checkout"],
-        &["test3", CARRIAGE_RETURN],
+        &["test3", CARRIAGE_RETURN, CARRIAGE_RETURN],
     )?;
     {
         let (stdout, _stderr) = git.run(&["smartlog"])?;
@@ -320,7 +320,7 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
 
     for input in inputs {
         // Sleep between inputs, to give the pty time to catch up.
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(250));
         write!(pty.master, "{}", input)?;
         pty.master.flush()?;
     }

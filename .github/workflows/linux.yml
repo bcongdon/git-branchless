@@ -52,7 +52,7 @@ jobs:
           if-no-files-found: error
 
   run-tests:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     needs: build-git
 
     strategy:
@@ -82,15 +82,11 @@ jobs:
         run: cargo build --benches --tests
 
       - name: Run Rust tests (all features)
-        timeout-minutes: 10
-        uses: docker://rust:buster
-        with:
-          entrypoint: /bin/bash
-          args: -c "PATH_TO_GIT=\"$PWD/git\" cargo test --all-features"
+        run: |
+          export PATH_TO_GIT="$PWD"/git
+          cargo test --all-features
 
       - name: Run Rust tests (no default features)
-        timeout-minutes: 10
-        uses: docker://rust:buster
-        with:
-          entrypoint: /bin/bash
-          args: -c "PATH_TO_GIT=\"$PWD/git\" cargo test --no-default-features"
+        run: |
+          export PATH_TO_GIT="$PWD"/git
+          cargo test --no-default-features
