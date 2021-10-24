@@ -223,7 +223,7 @@ fn test_checkout() -> eyre::Result<()> {
     run_in_pty(
         &git,
         &["branchless", "checkout"],
-        &["test1", CARRIAGE_RETURN, CARRIAGE_RETURN],
+        &["test1", CARRIAGE_RETURN],
     )?;
     {
         let (stdout, _stderr) = git.run(&["smartlog"])?;
@@ -241,7 +241,7 @@ fn test_checkout() -> eyre::Result<()> {
     run_in_pty(
         &git,
         &["branchless", "checkout"],
-        &["test3", CARRIAGE_RETURN, CARRIAGE_RETURN],
+        &["test3", CARRIAGE_RETURN],
     )?;
     {
         let (stdout, _stderr) = git.run(&["smartlog"])?;
@@ -313,6 +313,9 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         .try_clone_reader()
         .map_err(|e| eyre!("Could not clone reader: {}", e))?;
 
+    let mut buffer = [0; 1];
+    reader.read(&mut buffer)?;
+
     thread::spawn(move || loop {
         let mut s = String::new();
         reader.read_to_string(&mut s).unwrap();
@@ -326,6 +329,12 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
     }
 
     child.wait()?;
+
+    // let mut buffer = Vec::new();
+    // while !child.try_wait()?.is_some() {
+    //     reader.read_to_end(&mut buffer)?;
+    // }
+    // reader.read_to_end(&mut buffer)?;
 
     Ok(())
 }
