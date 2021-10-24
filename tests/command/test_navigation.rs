@@ -316,10 +316,10 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
     let mut buffer = [0; 1];
     reader.read(&mut buffer)?;
 
-    thread::spawn(move || loop {
-        let mut s = String::new();
-        reader.read_to_string(&mut s).unwrap();
-    });
+    // thread::spawn(move || loop {
+    //     let mut s = String::new();
+    //     reader.read_to_string(&mut s).unwrap();
+    // });
 
     for input in inputs {
         // Sleep between inputs, to give the pty time to catch up.
@@ -328,13 +328,14 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         pty.master.flush()?;
     }
 
-    child.wait()?;
+    // drop(pty);
+    // child.wait()?;
 
-    // let mut buffer = Vec::new();
-    // while !child.try_wait()?.is_some() {
-    //     reader.read_to_end(&mut buffer)?;
-    // }
-    // reader.read_to_end(&mut buffer)?;
+    let mut buffer = Vec::new();
+    while !child.try_wait()?.is_some() {
+        reader.read_to_end(&mut buffer)?;
+    }
+    reader.read_to_end(&mut buffer)?;
 
     Ok(())
 }
