@@ -1,4 +1,6 @@
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
@@ -313,29 +315,42 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         .try_clone_reader()
         .map_err(|e| eyre!("Could not clone reader: {}", e))?;
 
-    let mut buffer = [0; 1];
-    reader.read(&mut buffer)?;
+    let input_ready = Arc::new(AtomicBool::new(false));
 
-    // thread::spawn(move || loop {
-    //     let mut s = String::new();
-    //     reader.read_to_string(&mut s).unwrap();
-    // });
+    let input_ready_clone = Arc::clone(&input_ready);
+    thread::spawn(move || {
+        let mut buffer = [0; 1];
+        while let Ok(n) = reader.read(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+            input_ready_clone.swap(true, Ordering::SeqCst);
+        }
+    });
 
+    // let mut buffer = [0; 1];
+    // reader.read(&mut buffer)?;
     for input in inputs {
         // Sleep between inputs, to give the pty time to catch up.
-        sleep(Duration::from_millis(250));
+        if !input_ready.fetch_or(false, Ordering::SeqCst) {
+            sleep(Duration::from_millis(100));
+        }
         write!(pty.master, "{}", input)?;
         pty.master.flush()?;
+        input_ready.swap(false, Ordering::SeqCst);
     }
+
+    println!("waiting");
 
     // drop(pty);
-    // child.wait()?;
+    child.wait()?;
+    // child.process_id()
 
-    let mut buffer = Vec::new();
-    while !child.try_wait()?.is_some() {
-        reader.read_to_end(&mut buffer)?;
-    }
-    reader.read_to_end(&mut buffer)?;
+    // let mut buffer = Vec::new();
+    // while !child.try_wait()?.is_some() {
+    //     reader.read_to_end(&mut buffer)?;
+    // }
+    // reader.read_to_end(&mut buffer)?;
 
     Ok(())
 }
