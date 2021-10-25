@@ -78,17 +78,17 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@ce325b60658c1b38465c06cc965b79baf32c1e72
 
-      - name: Compile
-        run: cargo build --benches --tests
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+      # - name: Compile
+      #   run: cargo build --benches --tests
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
 
-      # - name: Run Rust tests (all features)
-      #   run: |
-      #     export PATH_TO_GIT="$PWD"/git
-      #     cargo test --all-features
+      - name: Run Rust tests (all features)
+        run: |
+          export PATH_TO_GIT="$PWD"/git
+          cargo test --all-features
 
-      # - name: Run Rust tests (no default features)
-      #   run: |
-      #     export PATH_TO_GIT="$PWD"/git
-      #     cargo test --no-default-features
+      - name: Run Rust tests (no default features)
+        run: |
+          export PATH_TO_GIT="$PWD"/git
+          cargo test --no-default-features
