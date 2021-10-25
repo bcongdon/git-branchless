@@ -286,6 +286,9 @@ fn test_checkout_abort() -> eyre::Result<()> {
     Ok(())
 }
 
+// run_in_pty runs the git command under a pty.
+// NOTE: This assumes that after each input is written, the command under test will write
+// some output to the terminal. This is done to prevent timing issues when running tests.
 fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<()> {
     // Use the native pty implementation for the system
     let pty_system = native_pty_system();
@@ -315,42 +318,33 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         .try_clone_reader()
         .map_err(|e| eyre!("Could not clone reader: {}", e))?;
 
-    let input_ready = Arc::new(AtomicBool::new(false));
+    let pty_ready_tx = Arc::new(AtomicBool::new(false));
+    let pty_ready_rx = Arc::clone(&pty_ready_tx);
 
-    let input_ready_clone = Arc::clone(&input_ready);
+    // Reader thread, used to consume output from the pty.
     thread::spawn(move || {
         let mut buffer = [0; 1];
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
                 break;
             }
-            input_ready_clone.swap(true, Ordering::SeqCst);
+            // Indicate that input was received.
+            pty_ready_rx.swap(true, Ordering::SeqCst);
         }
     });
 
-    // let mut buffer = [0; 1];
-    // reader.read(&mut buffer)?;
     for input in inputs {
-        // Sleep between inputs, to give the pty time to catch up.
-        if !input_ready.fetch_or(false, Ordering::SeqCst) {
+        while !pty_ready_tx.load(Ordering::SeqCst) {
+            // Sleep between inputs if the reader hasn't received anything,
+            // to give the pty time to catch up.
             sleep(Duration::from_millis(100));
         }
         write!(pty.master, "{}", input)?;
         pty.master.flush()?;
-        input_ready.swap(false, Ordering::SeqCst);
+        // Indicate that the write is done.
+        pty_ready_tx.swap(false, Ordering::SeqCst);
     }
 
-    println!("waiting");
-
-    // drop(pty);
     child.wait()?;
-    // child.process_id()
-
-    // let mut buffer = Vec::new();
-    // while !child.try_wait()?.is_some() {
-    //     reader.read_to_end(&mut buffer)?;
-    // }
-    // reader.read_to_end(&mut buffer)?;
-
     Ok(())
 }
