@@ -319,12 +319,12 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         .try_clone_reader()
         .map_err(|e| eyre!("Could not clone reader: {}", e))?;
 
-    let pty_ready_tx = Arc::new(AtomicBool::new(false));
-    let pty_ready_rx = Arc::clone(&pty_ready_tx);
+    // let pty_ready_tx = Arc::new(AtomicBool::new(false));
+    // let pty_ready_rx = Arc::clone(&pty_ready_tx);
 
     enum Signal {
         OutputReceived,
-        Done,
+        // Done,
     }
 
     let (signal_sender, signal_receiver) = mpsc::channel();
@@ -335,26 +335,34 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         let mut buffer = [0; 1];
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
-                signal_sender.send(Signal::Done).expect("signaling done");
                 break;
             }
             // Indicate that input was received.
             signal_sender
                 .send(Signal::OutputReceived)
                 .expect("signaling output received");
+            // println!("Sending signal");
         }
     });
 
     // Debouncing thread.
-    thread::spawn(move || loop {
-        match signal_receiver.recv_timeout(Duration::from_millis(500)) {
-            Ok(Signal::Done) => {
-                break;
+    thread::spawn(move || {
+        let mut received_ok = false;
+        loop {
+            match signal_receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(Signal::OutputReceived) => received_ok = true,
+                Err(_) => {
+                    println!("timeout: {}", received_ok);
+                    if !received_ok {
+                        continue;
+                    }
+                    received_ok = false;
+                    if debounce_sender.send(()).is_err() {
+                        break;
+                    }
+                    println!("Sending debounce");
+                }
             }
-            Err(_) => {
-                debounce_sender.send(()).expect("sending debounce signal");
-            }
-            _ => {}
         }
     });
 
@@ -368,7 +376,7 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
         write!(pty.master, "{}", input)?;
         pty.master.flush()?;
         // Indicate that the write is done.
-        pty_ready_tx.swap(false, Ordering::SeqCst);
+        // pty_ready_tx.swap(false, Ordering::SeqCst);
     }
 
     child.wait()?;
