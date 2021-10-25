@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::thread::sleep;
@@ -321,24 +322,49 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
     let pty_ready_tx = Arc::new(AtomicBool::new(false));
     let pty_ready_rx = Arc::clone(&pty_ready_tx);
 
+    enum Signal {
+        OutputReceived,
+        Done,
+    }
+
+    let (signal_sender, signal_receiver) = mpsc::channel();
+    let (debounce_sender, debounce_receiver) = mpsc::channel();
+
     // Reader thread, used to consume output from the pty.
     thread::spawn(move || {
         let mut buffer = [0; 1];
         while let Ok(n) = reader.read(&mut buffer) {
             if n == 0 {
+                signal_sender.send(Signal::Done).expect("signaling done");
                 break;
             }
             // Indicate that input was received.
-            pty_ready_rx.swap(true, Ordering::SeqCst);
+            signal_sender
+                .send(Signal::OutputReceived)
+                .expect("signaling output received");
+        }
+    });
+
+    // Debouncing thread.
+    thread::spawn(move || loop {
+        match signal_receiver.recv_timeout(Duration::from_millis(500)) {
+            Ok(Signal::Done) => {
+                break;
+            }
+            Err(_) => {
+                debounce_sender.send(()).expect("sending debounce signal");
+            }
+            _ => {}
         }
     });
 
     for input in inputs {
-        while !pty_ready_tx.load(Ordering::SeqCst) {
-            // Sleep between inputs if the reader hasn't received anything,
-            // to give the pty time to catch up.
-            sleep(Duration::from_millis(100));
-        }
+        debounce_receiver.recv()?;
+        // while !pty_ready_tx.load(Ordering::SeqCst) {
+        //     // Sleep between inputs if the reader hasn't received anything,
+        //     // to give the pty time to catch up.
+        //     sleep(Duration::from_millis(100));
+        // }
         write!(pty.master, "{}", input)?;
         pty.master.flush()?;
         // Indicate that the write is done.
