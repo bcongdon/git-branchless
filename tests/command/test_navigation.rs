@@ -367,14 +367,17 @@ fn run_in_pty(git: &GitWrapper, args: &[&str], inputs: &[&str]) -> eyre::Result<
     });
 
     for input in inputs {
-        debounce_receiver.recv()?;
-        // while !pty_ready_tx.load(Ordering::SeqCst) {
-        //     // Sleep between inputs if the reader hasn't received anything,
-        //     // to give the pty time to catch up.
-        //     sleep(Duration::from_millis(100));
-        // }
-        write!(pty.master, "{}", input)?;
-        pty.master.flush()?;
+        for c in input.chars() {
+            debounce_receiver.recv()?;
+            // while !pty_ready_tx.load(Ordering::SeqCst) {
+            //     // Sleep between inputs if the reader hasn't received anything,
+            //     // to give the pty time to catch up.
+            //     sleep(Duration::from_millis(100));
+            // }
+            write!(pty.master, "{}", c)?;
+            pty.master.flush()?;
+        }
+
         // Indicate that the write is done.
         // pty_ready_tx.swap(false, Ordering::SeqCst);
     }
